@@ -52,7 +52,7 @@ class Brand24Scraper:
         """Download the appropriate ChromeDriver version for Linux."""
         max_retries = 3
         retry_delay = 5
-    
+
         for attempt in range(max_retries):
             try:
                 major_version = version.split('.')[0]
@@ -96,7 +96,7 @@ class Brand24Scraper:
                         if file.endswith('chromedriver'):
                             with zip_file.open(file) as source, open('chromedriver', 'wb') as target:
                                 shutil.copyfileobj(source, target)
-                                os.chmod('chromedriver', 0o755)
+                                os.chmod('chromedriver', 0o755)  # Make it executable
                                 break
 
                 print("ChromeDriver downloaded and ready.")
@@ -114,6 +114,7 @@ class Brand24Scraper:
             except Exception as e:
                 print(f"Error downloading ChromeDriver: {str(e)}")
                 raise
+
 
     def setup_driver(self):
         """Set up the Chrome WebDriver with appropriate options."""
