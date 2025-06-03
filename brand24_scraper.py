@@ -31,90 +31,83 @@ class Brand24Scraper:
         self.target_url = "https://app.brand24.com/panel/results/1397059472?p=1&or=0&cdt=days&dr=4&va=1&d1=2025-05-03&d2=2025-06-02"
 
     def get_chrome_version(self):
-        """Get the installed Chrome version."""
+        """Get the installed Chrome version (cross-platform)."""
         try:
-            import winreg
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon")
-            version = winreg.QueryValueEx(key, "version")[0]
-            return version
+            if platform.system() == "Windows":
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon")
+                version = winreg.QueryValueEx(key, "version")[0]
+                return version
+            else:
+                version = subprocess.getoutput("google-chrome --version")
+                if not version:
+                    version = subprocess.getoutput("/usr/bin/google-chrome --version")
+                # Expecting output like: 'Google Chrome 137.0.7151.68'
+                return version.strip().split()[-1] if "Chrome" in version else None
         except Exception as e:
             print(f"Could not determine Chrome version: {str(e)}")
             return None
 
     def download_chromedriver(self, version):
-        """Download the appropriate ChromeDriver version."""
+        """Download the appropriate ChromeDriver version for Linux."""
         max_retries = 3
         retry_delay = 5
-        
+    
         for attempt in range(max_retries):
             try:
-                # Get the major version number
                 major_version = version.split('.')[0]
-                
-                # Create a custom SSL context
                 ssl_context = ssl.create_default_context(cafile=certifi.where())
-                
-                # Get the latest ChromeDriver version for this Chrome version
-                url = f"https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json"
-                
-                # Create a custom opener with SSL context
-                opener = urllib.request.build_opener(
-                    urllib.request.HTTPSHandler(context=ssl_context)
-                )
+
+                url = "https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json"
+                opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl_context))
                 urllib.request.install_opener(opener)
-                
-                # Add headers to mimic a browser request
+
                 headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36'
+                    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari/537.36'
                 }
-                
+
                 request = urllib.request.Request(url, headers=headers)
-                response = urllib.request.urlopen(request, timeout=60)  # Increased timeout
+                response = urllib.request.urlopen(request, timeout=60)
                 data = json.loads(response.read())
-                
-                # Find the matching version
-                matching_version = None
-                for version_info in data['versions']:
-                    if version_info['version'].startswith(f"{major_version}."):
-                        matching_version = version_info
-                        break
-                
+
+                matching_version = next(
+                    (v for v in data['versions'] if v['version'].startswith(f"{major_version}.")), None
+                )
+
                 if not matching_version:
                     raise Exception(f"Could not find ChromeDriver for Chrome version {version}")
-                
-                # Get the download URL for Windows
-                download_url = None
-                for download in matching_version['downloads']['chromedriver']:
-                    if download['platform'] == 'win64':
-                        download_url = download['url']
-                        break
-                
+
+                # Look for the Linux64 ChromeDriver
+                download_url = next(
+                    (d['url'] for d in matching_version['downloads']['chromedriver'] if d['platform'] == 'linux64'),
+                    None
+                )
+
                 if not download_url:
-                    raise Exception("Could not find Windows ChromeDriver download URL")
-                
-                # Download and extract ChromeDriver
+                    raise Exception("Could not find Linux ChromeDriver download URL")
+
                 print(f"Downloading ChromeDriver {matching_version['version']}...")
                 request = urllib.request.Request(download_url, headers=headers)
-                response = urllib.request.urlopen(request, timeout=60)  # Increased timeout
+                response = urllib.request.urlopen(request, timeout=60)
                 zip_data = io.BytesIO(response.read())
-                
+
                 with zipfile.ZipFile(zip_data) as zip_file:
-                    # Extract chromedriver.exe
                     for file in zip_file.namelist():
-                        if file.endswith('chromedriver.exe'):
-                            with zip_file.open(file) as source, open('chromedriver.exe', 'wb') as target:
+                        if file.endswith('chromedriver'):
+                            with zip_file.open(file) as source, open('chromedriver', 'wb') as target:
                                 shutil.copyfileobj(source, target)
+                                os.chmod('chromedriver', 0o755)
                                 break
-                
-                print("ChromeDriver downloaded successfully!")
-                return os.path.abspath('chromedriver.exe')
-                
+
+                print("ChromeDriver downloaded and ready.")
+                return os.path.abspath('chromedriver')
+
             except (TimeoutException, WebDriverException, MaxRetryError, socket.timeout) as e:
                 if attempt < max_retries - 1:
                     print(f"Download attempt {attempt + 1} failed: {str(e)}")
                     print(f"Retrying in {retry_delay} seconds...")
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay *= 2
                 else:
                     print(f"Error downloading ChromeDriver after {max_retries} attempts: {str(e)}")
                     raise
